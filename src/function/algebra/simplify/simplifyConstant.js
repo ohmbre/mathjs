@@ -10,7 +10,9 @@ function factory (type, config, load, typed, math) {
   const ConstantNode = math.expression.node.ConstantNode
   const OperatorNode = math.expression.node.OperatorNode
   const FunctionNode = math.expression.node.FunctionNode
-
+  const ConditionalNode = math.expression.node.ConditionalNode
+  const ArrayNode = math.expression.node.ArrayNode
+    
   function simplifyConstant (expr) {
     const res = foldFraction(expr)
     return type.isNode(res) ? res : _toNode(res)
@@ -52,6 +54,7 @@ function factory (type, config, load, typed, math) {
 
   // convert a number to a fraction only if it can be expressed exactly
   function _exactFraction (n) {
+    return n
     if (isFinite(n)) {
       const f = math.fraction(n)
       if (f.valueOf() === n) {
@@ -147,6 +150,23 @@ function factory (type, config, load, typed, math) {
           return _toNumber(node.value)
         }
         return node
+      case 'ConditionalNode':
+        const cond = foldFraction(node.condition)
+	const texpr = foldFraction(node.trueExpr)
+	const fexpr = foldFraction(node.falseExpr)
+	if (!cond.isNode) {
+	    return cond ? texpr : fexpr
+	}
+	return new ConditionalNode(cond, type.isNode(texpr) ? texpr : _toNode(texpr), type.isNode(fexpr) ? fexpr : _toNode(fexpr))
+    case 'ArrayNode':
+	var newitems = []
+	for (var i = 0; i < node.items.length; i++) {
+	    var inode = foldFraction(node.items[i])
+	    if (inode.isNode) newitems.push(inode)
+	    else newitems.push(new ConstantNode(inode))
+	}
+	console.log('newitems:',newitems)
+	return new ArrayNode(newitems)
       case 'FunctionNode':
         if (math[node.name] && math[node.name].rawArgs) {
           return node
@@ -173,12 +193,13 @@ function factory (type, config, load, typed, math) {
           // treat as operator
         }
         /* falls through */
+	
       case 'OperatorNode':
         const fn = node.fn.toString()
         let args
         let res
         const makeNode = createMakeNodeFunction(node)
-        if (node.isUnary()) {
+        if (node.isUnary && node.isUnary()) {
           args = [foldFraction(node.args[0])]
           if (!type.isNode(args[0])) {
             res = _eval(fn, args)
@@ -240,8 +261,6 @@ function factory (type, config, load, typed, math) {
       case 'RangeNode':
         /* falls through */
       case 'UpdateNode':
-        /* falls through */
-      case 'ConditionalNode':
         /* falls through */
       default:
         throw new Error(`Unimplemented node type in simplifyConstant: ${node.type}`)
